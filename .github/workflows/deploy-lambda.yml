@@ -48,7 +48,7 @@ jobs:
             aws s3 cp bitstring-updater-lambda.zip s3://${bucket_name}/lambda/bitstring-updater-lambda.zip --region $region
 
             aws lambda update-function-code \
-              --function-name bitstring-updater-lambda \
+              --function-name zeroverify-bitstring-updater \
               --s3-bucket ${bucket_name} \
               --s3-key lambda/bitstring-updater-lambda.zip \
               --region $region
