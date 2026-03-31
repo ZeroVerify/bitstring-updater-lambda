@@ -110,16 +110,26 @@ func TestApplyBitMutation_ClearBit(t *testing.T) {
 	}
 }
 
-func TestApplyBitMutation_OutOfRange_Skipped(t *testing.T) {
-	bits := make([]byte, 2) 
+func TestApplyBitMutation_OutOfRange_Grows(t *testing.T) {
+	bits := make([]byte, 2)
 
 	m := stream.BitMutation{BitIndex: 100, TargetBit: 1}
 	bytePos := m.BitIndex / 8
+	bitPos := uint(7 - m.BitIndex%8)
 
-	if bytePos < len(bits) {
-		t.Error("expected out-of-range check to catch this")
+	if bytePos >= len(bits) {
+		grown := make([]byte, bytePos+1)
+		copy(grown, bits)
+		bits = grown
 	}
-	
+	bits[bytePos] |= 1 << bitPos
+
+	if len(bits) != int(bytePos)+1 {
+		t.Errorf("expected bitstring to grow to %d bytes, got %d", bytePos+1, len(bits))
+	}
+	if bits[bytePos]&(1<<bitPos) == 0 {
+		t.Errorf("expected bit %d to be set after grow", m.BitIndex)
+	}
 }
 
 func TestApplyMutations_NoopOnEmptyMutations(t *testing.T) {
