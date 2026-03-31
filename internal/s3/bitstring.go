@@ -18,7 +18,7 @@ import (
 
 const (
 	maxRetries = 5
-	bucket     = "zeroverify-metadata"
+	bucket     = "zeroverify-artifacts"
 	key        = "bitstring/v1/bitstring.gz"
 )
 
