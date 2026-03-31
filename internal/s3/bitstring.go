@@ -10,10 +10,11 @@ import (
 	"io"
 	"log"
 
+	"github.com/ZeroVerify/bitstring-updater-lambda/internal/stream"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/ZeroVerify/bitstring-updater-lambda/internal/stream"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const (
@@ -43,8 +44,9 @@ func ApplyMutations(ctx context.Context, mutations []stream.BitMutation) error {
 			bytePos := m.BitIndex / 8
 			bitPos := uint(7 - m.BitIndex%8)
 			if bytePos >= len(bits) {
-				log.Printf("SKIP: bit_index %d out of range (bitstring len=%d bytes)", m.BitIndex, len(bits))
-				continue
+				grown := make([]byte, bytePos+1)
+				copy(grown, bits)
+				bits = grown
 			}
 			if m.TargetBit == 1 {
 				bits[bytePos] |= 1 << bitPos
@@ -60,7 +62,7 @@ func ApplyMutations(ctx context.Context, mutations []stream.BitMutation) error {
 
 		var apiErr interface{ ErrorCode() string }
 
-        if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
 			log.Printf("ETag conflict on attempt %d/%d, retrying with fresh download", attempt+1, maxRetries)
 			continue
 		}
@@ -77,6 +79,10 @@ func download(ctx context.Context) (etag string, bits []byte, err error) {
 		Key:    aws.String(key),
 	})
 	if err != nil {
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return "", []byte{}, nil
+		}
 		return "", nil, err
 	}
 	defer out.Body.Close()
@@ -100,7 +106,6 @@ func download(ctx context.Context) (etag string, bits []byte, err error) {
 	return aws.ToString(out.ETag), bits, nil
 }
 
-
 func upload(ctx context.Context, etag string, bits []byte) error {
 	b64 := base64.StdEncoding.EncodeToString(bits)
 
@@ -113,13 +118,18 @@ func upload(ctx context.Context, etag string, bits []byte) error {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
-	_, err := client.PutObject(ctx, &awss3.PutObjectInput{
+	input := &awss3.PutObjectInput{
 		Bucket:       aws.String(bucket),
 		Key:          aws.String(key),
 		Body:         bytes.NewReader(buf.Bytes()),
-		IfMatch:      aws.String(etag),
 		ContentType:  aws.String("application/gzip"),
 		CacheControl: aws.String("public, max-age=300"),
-	})
+	}
+	if etag == "" {
+		input.IfNoneMatch = aws.String("*")
+	} else {
+		input.IfMatch = aws.String(etag)
+	}
+	_, err := client.PutObject(ctx, input)
 	return err
 }
